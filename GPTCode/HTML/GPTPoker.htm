@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Poker Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #2e7d32;
+            color: #fff;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .game-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .hand, .community {
+            display: flex;
+            justify-content: center;
+            margin: 10px 0;
+        }
+        .card {
+            width: 60px;
+            height: 90px;
+            border: 1px solid #fff;
+            border-radius: 8px;
+            background-color: #fff;
+            color: #000;
+            margin: 0 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            position: relative;
+        }
+        .card .suit {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            font-size: 16px;
+        }
+        .hidden {
+            background-color: #1b5e20;
+            border: 1px solid #fff;
+            color: #1b5e20;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #66bb6a;
+            color: #fff;
+        }
+        button:hover {
+            background-color: #43a047;
+        }
+        #message {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>Simple Texas Hold'em Poker</h1>
+
+        <div>
+            <h2>Your Hand</h2>
+            <div class="hand" id="player-hand">
+                <!-- Player cards will appear here -->
+            </div>
+        </div>
+
+        <div>
+            <h2>Computer's Hand</h2>
+            <div class="hand" id="computer-hand">
+                <!-- Computer's cards will appear here -->
+            </div>
+        </div>
+
+        <div>
+            <h2>Community Cards</h2>
+            <div class="community" id="community-cards">
+                <!-- Community cards will appear here -->
+            </div>
+        </div>
+
+        <div>
+            <button id="deal-button">Deal Community Cards</button>
+            <button id="fold-button" disabled>Fold</button>
+            <button id="showdown-button" disabled>Showdown</button>
+        </div>
+
+        <div id="message"></div>
+    </div>
+
+    <script>
+        // Card representation
+        const suits = ['♥', '♦', '♣', '♠'];
+        const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+        // Game state
+        let deck = [];
+        let playerHand = [];
+        let computerHand = [];
+        let communityCards = [];
+        let gameOver = false;
+
+        // DOM elements
+        const playerHandDiv = document.getElementById('player-hand');
+        const computerHandDiv = document.getElementById('computer-hand');
+        const communityCardsDiv = document.getElementById('community-cards');
+        const dealButton = document.getElementById('deal-button');
+        const foldButton = document.getElementById('fold-button');
+        const showdownButton = document.getElementById('showdown-button');
+        const messageDiv = document.getElementById('message');
+
+        // Initialize deck
+        function initializeDeck() {
+            deck = [];
+            for (let suit of suits) {
+                for (let rank of ranks) {
+                    deck.push({suit, rank});
+                }
+            }
+        }
+
+        // Shuffle deck using Fisher-Yates algorithm
+        function shuffleDeck() {
+            for (let i = deck.length - 1; i > 0; i--) {
+                let j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+        }
+
+        // Draw a card
+        function drawCard() {
+            if (deck.length === 0) {
+                alert("No more cards in the deck!");
+                return null;
+            }
+            return deck.pop();
+        }
+
+        // Render a card
+        function renderCard(card, hidden=false) {
+            const cardDiv = document.createElement('div');
+            cardDiv.classList.add('card');
+            if (hidden) {
+                cardDiv.classList.add('hidden');
+            } else {
+                cardDiv.innerHTML = `${card.rank}<span class="suit">${card.suit}</span>`;
+                // Color red for hearts and diamonds
+                if (card.suit === '♥' || card.suit === '♦') {
+                    cardDiv.style.color = 'red';
+                }
+            }
+            return cardDiv;
+        }
+
+        // Start a new game
+        function startGame() {
+            initializeDeck();
+            shuffleDeck();
+            playerHand = [drawCard(), drawCard()];
+            computerHand = [drawCard(), drawCard()];
+            communityCards = [];
+            gameOver = false;
+            messageDiv.textContent = '';
+
+            // Render player's hand
+            playerHandDiv.innerHTML = '';
+            for (let card of playerHand) {
+                playerHandDiv.appendChild(renderCard(card));
+            }
+
+            // Render computer's hidden hand
+            computerHandDiv.innerHTML = '';
+            for (let card of computerHand) {
+                computerHandDiv.appendChild(renderCard(card, true)); // Hidden
+            }
+
+            // Clear community cards
+            communityCardsDiv.innerHTML = '';
+
+            // Enable/Disable buttons
+            dealButton.disabled = false; // Enable Deal button
+            foldButton.disabled = false;
+            showdownButton.disabled = false;
+        }
+
+        // Reveal community cards (flop, turn, river)
+        function dealCommunityCards() {
+            if (communityCards.length === 0) {
+                // Flop
+                communityCards.push(drawCard(), drawCard(), drawCard());
+                messageDiv.textContent = "Flop dealt. Click 'Deal' for Turn.";
+            } else if (communityCards.length === 3) {
+                // Turn
+                communityCards.push(drawCard());
+                messageDiv.textContent = "Turn dealt. Click 'Deal' for River.";
+            } else if (communityCards.length === 4) {
+                // River
+                communityCards.push(drawCard());
+                messageDiv.textContent = "River dealt. Proceed to Showdown or Fold.";
+                dealButton.disabled = true; // No more cards to deal
+            }
+
+            // Render community cards
+            communityCardsDiv.innerHTML = '';
+            for (let card of communityCards) {
+                communityCardsDiv.appendChild(renderCard(card));
+            }
+        }
+
+        // Simple hand comparison (high card only)
+        function compareHands() {
+            const playerBest = getHighCard([...playerHand, ...communityCards]);
+            const computerBest = getHighCard([...computerHand, ...communityCards]);
+
+            if (playerBest > computerBest) {
+                return "You win!";
+            } else if (playerBest < computerBest) {
+                return "Computer wins!";
+            } else {
+                return "It's a tie!";
+            }
+        }
+
+        // Get the highest card value
+        function getHighCard(cards) {
+            const valueMap = {
+                '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
+                '7': 7, '8': 8, '9': 9, '10': 10,
+                'J': 11, 'Q': 12, 'K': 13, 'A': 14
+            };
+            let max = 0;
+            for (let card of cards) {
+                if (valueMap[card.rank] > max) {
+                    max = valueMap[card.rank];
+                }
+            }
+            return max;
+        }
+
+        // Handle Deal button
+        dealButton.addEventListener('click', () => {
+            if (!gameOver) {
+                dealCommunityCards();
+            }
+        });
+
+        // Handle Fold button
+        foldButton.addEventListener('click', () => {
+            if (!gameOver) {
+                messageDiv.textContent = "You folded. Computer wins!";
+                endGame();
+            }
+        });
+
+        // Handle Showdown button
+        showdownButton.addEventListener('click', () => {
+            if (!gameOver) {
+                if (communityCards.length < 5) {
+                    messageDiv.textContent = "Deal all community cards before showdown!";
+                    return;
+                }
+                const result = compareHands();
+                messageDiv.textContent = result;
+                revealComputerHand();
+                endGame();
+            }
+        });
+
+        // Reveal computer's hand
+        function revealComputerHand() {
+            computerHandDiv.innerHTML = '';
+            for (let card of computerHand) {
+                computerHandDiv.appendChild(renderCard(card));
+            }
+        }
+
+        // End the game
+        function endGame() {
+            gameOver = true;
+            foldButton.disabled = true;
+            showdownButton.disabled = true;
+            dealButton.disabled = false; // Enable Deal for new game
+            // Update Deal button text to start a new game
+            dealButton.textContent = "New Game";
+            // Change Deal button functionality to restart the game
+            dealButton.removeEventListener('click', dealCommunityCards);
+            dealButton.addEventListener('click', startGame, { once: true });
+        }
+
+        // Initialize the game on page load
+        window.onload = startGame;
+    </script>
+</body>
+</html>

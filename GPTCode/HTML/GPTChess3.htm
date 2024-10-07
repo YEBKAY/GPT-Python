@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Enhanced AI vs Heuristic AI Chess Game with Move Visualization</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+            font-family: Arial, sans-serif;
+        }
+        #chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            border: 2px solid #333;
+        }
+        .square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            position: relative;
+            transition: background-color 0.3s;
+        }
+        .light {
+            background-color: #f0d9b5;
+        }
+        .dark {
+            background-color: #b58863;
+        }
+        /* Highlighting Styles */
+        .highlight-from {
+            background-color: yellow !important;
+        }
+        .highlight-to {
+            background-color: orange !important;
+        }
+        /* Arrow Indicator */
+        .arrow {
+            position: absolute;
+            width: 0; 
+            height: 0; 
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 20px solid red;
+            top: 20px;
+            left: 25px;
+            opacity: 0.7;
+            transform: rotate(45deg);
+        }
+        #status {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+<div>
+    <div id="chessboard"></div>
+    <div id="status">Initializing...</div>
+</div>
+
+<script>
+// Chess Pieces Representation
+const PIECES = {
+    'P': '♙',
+    'R': '♖',
+    'N': '♘',
+    'B': '♗',
+    'Q': '♕',
+    'K': '♔',
+    'p': '♟︎',
+    'r': '♜',
+    'n': '♞',
+    'b': '♝',
+    'q': '♛',
+    'k': '♚',
+    '': ''
+};
+
+// Initialize the board
+let board = [
+    ['r','n','b','q','k','b','n','r'],
+    ['p','p','p','p','p','p','p','p'],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+    ['','','','','','','',''],
+    ['P','P','P','P','P','P','P','P'],
+    ['R','N','B','Q','K','B','N','R']
+];
+
+// Current turn: 'w' (White) or 'b' (Black)
+let turn = 'w';
+
+// Game status
+let gameOver = false;
+
+// Render the board
+function renderBoard() {
+    const chessboard = document.getElementById('chessboard');
+    chessboard.innerHTML = '';
+    for(let row=0; row<8; row++) {
+        for(let col=0; col<8; col++) {
+            const square = document.createElement('div');
+            square.classList.add('square');
+            if((row + col) % 2 === 0) {
+                square.classList.add('light');
+            } else {
+                square.classList.add('dark');
+            }
+            const piece = board[row][col];
+            square.textContent = PIECES[piece] || '';
+            square.id = `square-${row}-${col}`; // Assign unique ID for each square
+            chessboard.appendChild(square);
+        }
+    }
+}
+
+// Utility to clone the board
+function cloneBoard(bd) {
+    return bd.map(row => row.slice());
+}
+
+// Get all possible moves for the current player
+function getAllPossibleMoves(bd, currentTurn) {
+    let moves = [];
+    for(let r=0; r<8; r++) {
+        for(let c=0; c<8; c++) {
+            let piece = bd[r][c];
+            if(piece === '') continue;
+            if((currentTurn === 'w' && piece === piece.toUpperCase()) ||
+               (currentTurn === 'b' && piece === piece.toLowerCase())) {
+                let pieceMoves = getPieceMoves(bd, r, c);
+                pieceMoves.forEach(move => {
+                    moves.push({from: [r, c], to: move});
+                });
+            }
+        }
+    }
+    return moves;
+}
+
+// Get moves for a single piece
+function getPieceMoves(bd, r, c) {
+    let piece = bd[r][c];
+    let moves = [];
+    let directions = [];
+    let isWhite = piece === piece.toUpperCase();
+    piece = piece.toLowerCase();
+
+    switch(piece) {
+        case 'p':
+            let dir = isWhite ? -1 : 1;
+            // Move forward
+            if(bd[r + dir] && bd[r + dir][c] === '') {
+                moves.push([r + dir, c]);
+                // Double move from starting position
+                if((isWhite && r === 6) || (!isWhite && r === 1)) {
+                    if(bd[r + 2*dir] && bd[r + 2*dir][c] === '') {
+                        moves.push([r + 2*dir, c]);
+                    }
+                }
+            }
+            // Captures
+            for(let dc of [-1, 1]) {
+                if(bd[r + dir] && bd[r + dir][c + dc] &&
+                   isOpponentPiece(bd[r + dir][c + dc], isWhite)) {
+                    moves.push([r + dir, c + dc]);
+                }
+            }
+            break;
+        case 'r':
+            directions = [[1,0], [-1,0], [0,1], [0,-1]];
+            moves = moves.concat(slideMoves(bd, r, c, directions));
+            break;
+        case 'n':
+            const knightMoves = [
+                [r+2, c+1], [r+1, c+2], [r-1, c+2], [r-2, c+1],
+                [r-2, c-1], [r-1, c-2], [r+1, c-2], [r+2, c-1]
+            ];
+            knightMoves.forEach(m => {
+                if(isInside(m[0], m[1]) && 
+                   (!bd[m[0]][m[1]] || isOpponentPiece(bd[m[0]][m[1]], isWhite))) {
+                    moves.push(m);
+                }
+            });
+            break;
+        case 'b':
+            directions = [[1,1], [1,-1], [-1,1], [-1,-1]];
+            moves = moves.concat(slideMoves(bd, r, c, directions));
+            break;
+        case 'q':
+            directions = [[1,0], [-1,0], [0,1], [0,-1], [1,1], [1,-1], [-1,1], [-1,-1]];
+            moves = moves.concat(slideMoves(bd, r, c, directions));
+            break;
+        case 'k':
+            const kingMoves = [
+                [r+1, c], [r+1, c+1], [r, c+1], [r-1, c+1],
+                [r-1, c], [r-1, c-1], [r, c-1], [r+1, c-1]
+            ];
+            kingMoves.forEach(m => {
+                if(isInside(m[0], m[1]) && 
+                   (!bd[m[0]][m[1]] || isOpponentPiece(bd[m[0]][m[1]], isWhite))) {
+                    moves.push(m);
+                }
+            });
+            break;
+    }
+
+    return moves;
+}
+
+// Helper for sliding pieces
+function slideMoves(bd, r, c, directions) {
+    let moves = [];
+    directions.forEach(dir => {
+        let dr = dir[0];
+        let dc = dir[1];
+        let nr = r + dr;
+        let nc = c + dc;
+        while(isInside(nr, nc)) {
+            if(bd[nr][nc] === '') {
+                moves.push([nr, nc]);
+            } else {
+                if(isOpponentPiece(bd[nr][nc], bd[r][c] === bd[r][c].toUpperCase())) {
+                    moves.push([nr, nc]);
+                }
+                break;
+            }
+            nr += dr;
+            nc += dc;
+        }
+    });
+    return moves;
+}
+
+// Check if position is inside the board
+function isInside(r, c) {
+    return r >=0 && r <8 && c >=0 && c <8;
+}
+
+// Check if the piece is opponent's
+function isOpponentPiece(piece, isWhite) {
+    if(piece === '') return false;
+    return isWhite ? piece === piece.toLowerCase() : piece === piece.toUpperCase();
+}
+
+// Simple heuristic evaluation: material count
+function evaluateBoard(bd) {
+    let score = 0;
+    const values = {
+        'p': 1, 'n': 3, 'b':3, 'r':5, 'q':9, 'k':0
+    };
+    for(let r=0; r<8; r++) {
+        for(let c=0; c<8; c++) {
+            let piece = bd[r][c];
+            if(piece === '') continue;
+            let val = values[piece.toLowerCase()] || 0;
+            score += piece === piece.toUpperCase() ? val : -val;
+        }
+    }
+    return score;
+}
+
+// Make a move on the board
+function makeMove(bd, move) {
+    let newBoard = cloneBoard(bd);
+    let piece = newBoard[move.from[0]][move.from[1]];
+    newBoard[move.to[0]][move.to[1]] = piece;
+    newBoard[move.from[0]][move.from[1]] = '';
+    return newBoard;
+}
+
+// Check for game over (simplified)
+function checkGameOver(bd, currentTurn) {
+    let moves = getAllPossibleMoves(bd, currentTurn);
+    if(moves.length === 0) {
+        // TODO: Check if it's checkmate or stalemate
+        return true;
+    }
+    return false;
+}
+
+// AI Algorithms
+
+// AI 1: Advanced Move AI (White)
+function advancedMoveAI(bd, currentTurn) {
+    let moves = getAllPossibleMoves(bd, currentTurn);
+    if(moves.length === 0) return null;
+
+    // Prioritize capturing higher-value pieces
+    const moveScores = moves.map(move => {
+        let targetPiece = bd[move.to[0]][move.to[1]];
+        let captureValue = getPieceValue(targetPiece);
+        return {move: move, score: captureValue};
+    });
+
+    // Sort moves by capture value descending
+    moveScores.sort((a, b) => {
+        return b.score - a.score;
+    });
+
+    // Filter moves that capture the most valuable piece
+    let maxCapture = Math.max(...moveScores.map(m => m.score));
+    let bestCaptureMoves = moveScores.filter(m => m.score === maxCapture).map(m => m.move);
+
+    if(bestCaptureMoves.length > 0) {
+        // Choose randomly among the best capture moves
+        return bestCaptureMoves[Math.floor(Math.random() * bestCaptureMoves.length)];
+    }
+
+    // If no captures, prefer moves that develop pieces towards the center
+    const center = [3, 4];
+    let developmentMoves = moves.map(move => {
+        let distance = Math.abs(move.to[0] - center[0]) + Math.abs(move.to[1] - center[1]);
+        return {move: move, distance: distance};
+    });
+
+    // Sort by distance to center (ascending)
+    developmentMoves.sort((a, b) => a.distance - b.distance);
+
+    // Choose among the top development moves to introduce variability
+    let topMoves = developmentMoves.filter(m => m.distance === developmentMoves[0].distance).map(m => m.move);
+    return topMoves[Math.floor(Math.random() * topMoves.length)];
+}
+
+// AI 2: Enhanced Heuristic-Based AI (Black)
+function heuristicMoveAI(bd, currentTurn) {
+    let moves = getAllPossibleMoves(bd, currentTurn);
+    if(moves.length === 0) return null;
+
+    // 1. Prioritize capturing higher-value pieces
+    const captureMoves = moves.map(move => {
+        let targetPiece = bd[move.to[0]][move.to[1]];
+        let captureValue = getPieceValue(targetPiece);
+        return {move: move, captureValue: captureValue};
+    }).filter(m => m.captureValue > 0); // Only capturing moves
+
+    if(captureMoves.length > 0) {
+        // Find the maximum capture value (highest value piece to capture)
+        let maxCaptureValue = Math.max(...captureMoves.map(m => m.captureValue));
+        let bestCaptureMoves = captureMoves.filter(m => m.captureValue === maxCaptureValue).map(m => m.move);
+        // Randomly select among best capture moves to add variability
+        return bestCaptureMoves[Math.floor(Math.random() * bestCaptureMoves.length)];
+    }
+
+    // 2. If no captures, select the move that minimizes the board score (maximizes Black's advantage)
+    let bestMove = null;
+    let bestScore = Infinity; // Since Black wants to minimize the score
+    moves.forEach(move => {
+        let newBd = makeMove(bd, move);
+        let score = evaluateBoard(newBd);
+        if(score < bestScore) {
+            bestScore = score;
+            bestMove = move;
+        }
+    });
+    return bestMove;
+}
+
+// Main game loop
+async function gameLoop() {
+    renderBoard();
+    updateStatus();
+    while(!gameOver) {
+        await sleep(500); // Delay for visualization
+        let currentAI = turn === 'w' ? advancedMoveAI : heuristicMoveAI;
+        let move = currentAI(board, turn);
+        if(!move) {
+            gameOver = true;
+            updateStatus(`${turn === 'w' ? 'White' : 'Black'} has no legal moves. Game Over.`);
+            break;
+        }
+
+        // Visualize the move before executing
+        await visualizeMove(move, turn);
+
+        // Execute the move
+        board = makeMove(board, move);
+        renderBoard();
+
+        if(checkGameOver(board, turn === 'w' ? 'b' : 'w')) {
+            gameOver = true;
+            updateStatus(`Game Over. ${turn === 'w' ? 'Black' : 'White'} wins!`);
+            break;
+        }
+        turn = turn === 'w' ? 'b' : 'w';
+        updateStatus(`${turn === 'w' ? 'White' : 'Black'}'s turn.`);
+    }
+}
+
+// Update game status
+function updateStatus(message) {
+    const status = document.getElementById('status');
+    if(message) {
+        status.textContent = message;
+    } else {
+        status.textContent = `${turn === 'w' ? 'White' : 'Black'}'s turn.`;
+    }
+}
+
+// Sleep helper
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Helper Functions for Move Visualization
+
+// Highlight the move before executing it
+async function visualizeMove(move, currentTurn) {
+    const fromId = `square-${move.from[0]}-${move.from[1]}`;
+    const toId = `square-${move.to[0]}-${move.to[1]}`;
+    const fromSquare = document.getElementById(fromId);
+    const toSquare = document.getElementById(toId);
+
+    // Add highlight classes
+    fromSquare.classList.add('highlight-from');
+    toSquare.classList.add('highlight-to');
+
+    // Display move notation
+    const moveNotation = `${convertToAlgebraic(move.from)} → ${convertToAlgebraic(move.to)}`;
+    updateStatus(`${currentTurn === 'w' ? 'White' : 'Black'} will move: ${moveNotation}`);
+
+    // Wait for a short duration to visualize the move
+    await sleep(1000); // 1 second delay
+
+    // Remove highlight classes
+    fromSquare.classList.remove('highlight-from');
+    toSquare.classList.remove('highlight-to');
+}
+
+// Convert board coordinates to algebraic notation (e.g., [6,4] -> e2)
+function convertToAlgebraic(position) {
+    const files = ['a','b','c','d','e','f','g','h'];
+    const rank = 8 - position[0];
+    const file = files[position[1]];
+    return `${file}${rank}`;
+}
+
+// Helper to get piece value
+function getPieceValue(piece) {
+    const values = {
+        'p': 1, 'n': 3, 'b':3, 'r':5, 'q':9, 'k':0
+    };
+    if(piece === '') return 0;
+    return values[piece.toLowerCase()] || 0;
+}
+
+// Start the game
+updateStatus('Starting game...');
+gameLoop();
+
+</script>
+
+</body>
+</html>

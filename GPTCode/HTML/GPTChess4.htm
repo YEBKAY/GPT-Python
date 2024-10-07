@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI vs AI Chess</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 2px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="chessCanvas" width="480" height="480"></canvas>
+
+    <script>
+        // Constants
+        const TILE_SIZE = 60;
+        const BOARD_SIZE = 8;
+        const COLORS = { light: '#f0d9b5', dark: '#b58863' };
+        const PIECES = {
+            'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖',
+            'Q': '♕', 'K': '♔', 'p': '♟︎', 'n': '♞',
+            'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚'
+        };
+
+        // Initialize Canvas
+        const canvas = document.getElementById('chessCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.font = '40px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Board Representation
+        let board = [
+            ['r','n','b','q','k','b','n','r'],
+            ['p','p','p','p','p','p','p','p'],
+            [null,null,null,null,null,null,null,null],
+            [null,null,null,null,null,null,null,null],
+            [null,null,null,null,null,null,null,null],
+            [null,null,null,null,null,null,null,null],
+            ['P','P','P','P','P','P','P','P'],
+            ['R','N','B','Q','K','B','N','R']
+        ];
+
+        // Game State
+        let currentPlayer = 'w'; // 'w' or 'b'
+        let gameOver = false;
+
+        // Render the board
+        function renderBoard() {
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    // Draw tile
+                    ctx.fillStyle = (row + col) % 2 === 0 ? COLORS.light : COLORS.dark;
+                    ctx.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+                    // Draw piece
+                    const piece = board[row][col];
+                    if (piece) {
+                        ctx.fillStyle = piece === piece.toUpperCase() ? '#000' : '#fff';
+                        ctx.fillText(PIECES[piece], col * TILE_SIZE + TILE_SIZE / 2, row * TILE_SIZE + TILE_SIZE / 2);
+                    }
+                }
+            }
+        }
+
+        // Utility Functions
+        function cloneBoard(board) {
+            return board.map(row => row.slice());
+        }
+
+        function getPieceColor(piece) {
+            if (!piece) return null;
+            return piece === piece.toUpperCase() ? 'w' : 'b';
+        }
+
+        // Generate All Possible Moves for Current Player
+        function generateMoves(board, player) {
+            let moves = [];
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    const piece = board[row][col];
+                    if (piece && getPieceColor(piece) === player) {
+                        moves = moves.concat(generatePieceMoves(board, row, col, piece));
+                    }
+                }
+            }
+            return moves;
+        }
+
+        // Generate Moves for a Specific Piece
+        function generatePieceMoves(board, row, col, piece) {
+            const moves = [];
+            const directions = {
+                'P': [[-1,0]], // Simplified: only forward moves
+                'p': [[1,0]],
+                'N': [[-2,-1], [-1,-2], [1,-2], [2,-1], [2,1], [1,2], [-1,2], [-2,1]],
+                'n': [[-2,-1], [-1,-2], [1,-2], [2,-1], [2,1], [1,2], [-1,2], [-2,1]],
+                'B': [[-1,-1], [-1,1], [1,-1], [1,1]],
+                'b': [[-1,-1], [-1,1], [1,-1], [1,1]],
+                'R': [[-1,0], [1,0], [0,-1], [0,1]],
+                'r': [[-1,0], [1,0], [0,-1], [0,1]],
+                'Q': [[-1,-1], [-1,1], [1,-1], [1,1], [-1,0], [1,0], [0,-1], [0,1]],
+                'q': [[-1,-1], [-1,1], [1,-1], [1,1], [-1,0], [1,0], [0,-1], [0,1]],
+                'K': [[-1,-1], [-1,1], [1,-1], [1,1], [-1,0], [1,0], [0,-1], [0,1]],
+                'k': [[-1,-1], [-1,1], [1,-1], [1,1], [-1,0], [1,0], [0,-1], [0,1]]
+            };
+
+            const isUpper = piece === piece.toUpperCase();
+            const dirs = directions[piece];
+            if (!dirs) return moves;
+
+            for (let dir of dirs) {
+                let newRow = row + dir[0];
+                let newCol = col + dir[1];
+                if (newRow >=0 && newRow < BOARD_SIZE && newCol >=0 && newCol < BOARD_SIZE) {
+                    const target = board[newRow][newCol];
+                    if (!target || getPieceColor(target) !== getPieceColor(piece)) {
+                        moves.push({ from: [row, col], to: [newRow, newCol] });
+                    }
+                }
+            }
+
+            // Note: This is a simplified move generator without special moves
+            return moves;
+        }
+
+        // Apply a Move
+        function applyMove(board, move) {
+            const newBoard = cloneBoard(board);
+            const piece = newBoard[move.from[0]][move.from[1]];
+            newBoard[move.from[0]][move.from[1]] = null;
+            newBoard[move.to[0]][move.to[1]] = piece;
+            return newBoard;
+        }
+
+        // Simple Evaluation Function
+        function evaluateBoard(board) {
+            const values = {
+                'P': 10, 'N': 30, 'B': 30, 'R': 50, 'Q': 90, 'K': 900,
+                'p': -10, 'n': -30, 'b': -30, 'r': -50, 'q': -90, 'k': -900
+            };
+            let score = 0;
+            for (let row of board) {
+                for (let piece of row) {
+                    if (piece) {
+                        score += values[piece] || 0;
+                    }
+                }
+            }
+            return score;
+        }
+
+        // Minimax Algorithm
+        function minimax(board, depth, isMaximizing, alpha, beta) {
+            if (depth === 0) {
+                return evaluateBoard(board);
+            }
+
+            const player = isMaximizing ? 'w' : 'b';
+            const moves = generateMoves(board, player);
+            if (moves.length === 0) {
+                return evaluateBoard(board);
+            }
+
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                for (let move of moves) {
+                    const newBoard = applyMove(board, move);
+                    const evalScore = minimax(newBoard, depth -1, false, alpha, beta);
+                    maxEval = Math.max(maxEval, evalScore);
+                    alpha = Math.max(alpha, evalScore);
+                    if (beta <= alpha) break;
+                }
+                return maxEval;
+            } else {
+                let minEval = Infinity;
+                for (let move of moves) {
+                    const newBoard = applyMove(board, move);
+                    const evalScore = minimax(newBoard, depth -1, true, alpha, beta);
+                    minEval = Math.min(minEval, evalScore);
+                    beta = Math.min(beta, evalScore);
+                    if (beta <= alpha) break;
+                }
+                return minEval;
+            }
+        }
+
+        // Get Best Move
+        function getBestMove(board, player, depth = 2) {
+            const moves = generateMoves(board, player);
+            let bestMove = null;
+            let bestValue = player === 'w' ? -Infinity : Infinity;
+
+            for (let move of moves) {
+                const newBoard = applyMove(board, move);
+                const boardValue = minimax(newBoard, depth -1, player === 'b', -Infinity, Infinity);
+                if (player === 'w') {
+                    if (boardValue > bestValue) {
+                        bestValue = boardValue;
+                        bestMove = move;
+                    }
+                } else {
+                    if (boardValue < bestValue) {
+                        bestValue = boardValue;
+                        bestMove = move;
+                    }
+                }
+            }
+            return bestMove;
+        }
+
+        // Game Loop
+        async function gameLoop() {
+            while (!gameOver) {
+                renderBoard();
+                await sleep(500); // Delay for visualization
+
+                const move = getBestMove(board, currentPlayer);
+                if (move) {
+                    board = applyMove(board, move);
+                    currentPlayer = currentPlayer === 'w' ? 'b' : 'w';
+                } else {
+                    gameOver = true;
+                    alert('Game Over');
+                }
+            }
+        }
+
+        // Utility Sleep Function
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Start the Game
+        renderBoard();
+        gameLoop();
+    </script>
+</body>
+</html>

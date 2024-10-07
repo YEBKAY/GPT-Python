@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple HTML5 Text Editor</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Menu Bar */
+        .menu-bar {
+            background-color: #2c3e50;
+            color: white;
+            display: flex;
+            padding: 10px;
+        }
+
+        .menu {
+            position: relative;
+            margin-right: 20px;
+            cursor: pointer;
+        }
+
+        .menu:hover .dropdown {
+            display: block;
+        }
+
+        .dropdown {
+            display: none;
+            position: absolute;
+            background-color: #34495e;
+            min-width: 150px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+        }
+
+        .dropdown button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            background: none;
+            color: white;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .dropdown button:hover {
+            background-color: #3d566e;
+        }
+
+        /* Text Area */
+        #text-area {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+            border: none;
+            outline: none;
+            resize: none;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Hidden File Input */
+        #file-input {
+            display: none;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            background-color: #ecf0f1;
+            padding: 5px 10px;
+            font-size: 14px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Menu Bar -->
+    <div class="menu-bar">
+        <div class="menu">File
+            <div class="dropdown">
+                <button onclick="newFile()">New</button>
+                <button onclick="openFile()">Open...</button>
+                <button onclick="saveFile()">Save</button>
+                <button onclick="saveAsFile()">Save As...</button>
+                <hr style="margin: 5px 0; border-color: #2c3e50;">
+                <button onclick="exitEditor()">Exit</button>
+            </div>
+        </div>
+        <div class="menu">Edit
+            <div class="dropdown">
+                <button onclick="document.getElementById('text-area').undo()">Undo</button>
+                <button onclick="document.getElementById('text-area').redo()">Redo</button>
+                <hr style="margin: 5px 0; border-color: #2c3e50;">
+                <button onclick="document.getElementById('text-area').cut()">Cut</button>
+                <button onclick="document.getElementById('text-area').copy()">Copy</button>
+                <button onclick="document.getElementById('text-area').paste()">Paste</button>
+                <button onclick="selectAllText()">Select All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text Area -->
+    <textarea id="text-area" spellcheck="false"></textarea>
+
+    <!-- Status Bar -->
+    <div class="status-bar" id="status-bar">Ready</div>
+
+    <!-- Hidden File Input -->
+    <input type="file" id="file-input" accept=".txt,.md,.html,.css,.js">
+
+    <script>
+        let currentFile = null;
+        let isModified = false;
+
+        const textArea = document.getElementById('text-area');
+        const fileInput = document.getElementById('file-input');
+        const statusBar = document.getElementById('status-bar');
+
+        // Update modification status
+        textArea.addEventListener('input', () => {
+            isModified = true;
+            updateStatus();
+        });
+
+        // Keyboard Shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey) {
+                switch (e.key.toLowerCase()) {
+                    case 'n':
+                        e.preventDefault();
+                        newFile();
+                        break;
+                    case 'o':
+                        e.preventDefault();
+                        openFile();
+                        break;
+                    case 's':
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            saveAsFile();
+                        } else {
+                            saveFile();
+                        }
+                        break;
+                    case 'z':
+                        e.preventDefault();
+                        document.execCommand('undo');
+                        break;
+                    case 'y':
+                        e.preventDefault();
+                        document.execCommand('redo');
+                        break;
+                    case 'a':
+                        e.preventDefault();
+                        selectAllText();
+                        break;
+                    case 'x':
+                        e.preventDefault();
+                        document.execCommand('cut');
+                        break;
+                    case 'c':
+                        e.preventDefault();
+                        document.execCommand('copy');
+                        break;
+                    case 'v':
+                        e.preventDefault();
+                        document.execCommand('paste');
+                        break;
+                }
+            }
+        });
+
+        // New File
+        function newFile() {
+            if (confirmUnsavedChanges()) {
+                textArea.value = '';
+                currentFile = null;
+                isModified = false;
+                updateTitle();
+                updateStatus();
+            }
+        }
+
+        // Open File
+        function openFile() {
+            if (!confirmUnsavedChanges()) return;
+            fileInput.click();
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    textArea.value = evt.target.result;
+                    currentFile = file;
+                    isModified = false;
+                    updateTitle();
+                    updateStatus();
+                };
+                reader.onerror = function() {
+                    alert('Error reading file!');
+                };
+                reader.readAsText(file);
+            }
+            // Reset the input value to allow opening the same file again
+            fileInput.value = '';
+        });
+
+        // Save File
+        function saveFile() {
+            if (currentFile) {
+                downloadFile(currentFile.name, textArea.value);
+                isModified = false;
+                updateStatus();
+            } else {
+                saveAsFile();
+            }
+        }
+
+        // Save As File
+        function saveAsFile() {
+            const filename = prompt('Enter file name:', 'Untitled.txt');
+            if (filename) {
+                downloadFile(filename, textArea.value);
+                currentFile = { name: filename };
+                isModified = false;
+                updateTitle();
+                updateStatus();
+            }
+        }
+
+        // Exit Editor
+        function exitEditor() {
+            if (confirmUnsavedChanges()) {
+                window.close(); // Note: This may not work as expected in all browsers
+            }
+        }
+
+        // Select All Text
+        function selectAllText() {
+            textArea.select();
+        }
+
+        // Download File Helper
+        function downloadFile(filename, content) {
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 0);
+        }
+
+        // Confirm Unsaved Changes
+        function confirmUnsavedChanges() {
+            if (isModified) {
+                const response = confirm('You have unsaved changes. Do you want to save them?');
+                if (response) {
+                    saveFile();
+                    return true;
+                } else {
+                    return true;
+                }
+            }
+            return true;
+        }
+
+        // Update Document Title
+        function updateTitle() {
+            const name = currentFile ? currentFile.name : 'Untitled';
+            document.title = `${name} - Simple HTML5 Text Editor`;
+        }
+
+        // Update Status Bar
+        function updateStatus(message = '') {
+            if (isModified) {
+                statusBar.textContent = 'Modified';
+            } else {
+                statusBar.textContent = message || 'Ready';
+            }
+        }
+
+        // Warn Before Closing with Unsaved Changes
+        window.addEventListener('beforeunload', (e) => {
+            if (isModified) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+    </script>
+</body>
+</html>

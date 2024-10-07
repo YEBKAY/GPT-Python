@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Autoclicker Game with PPS Ticker</title>
+    <style>
+        body {
+            background-color: #282c34;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            position: relative;
+            overflow: hidden;
+        }
+        h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+        #points {
+            font-size: 2em;
+            margin-bottom: 20px;
+        }
+        #click-button {
+            padding: 20px 40px;
+            font-size: 1.5em;
+            border: none;
+            border-radius: 10px;
+            background-color: #61dafb;
+            color: #282c34;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            position: relative;
+            z-index: 1;
+        }
+        #click-button:hover {
+            background-color: #21a1f1;
+        }
+        .upgrades {
+            margin-top: 40px;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .upgrade {
+            background-color: #3c3f41;
+            border: 2px solid #61dafb;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px;
+            width: 200px;
+            transition: background-color 0.3s, transform 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .upgrade:hover {
+            background-color: #4e5254;
+            transform: scale(1.05);
+        }
+        .upgrade h3 {
+            margin-bottom: 10px;
+        }
+        .upgrade p {
+            margin-bottom: 15px;
+        }
+        .upgrade button {
+            padding: 10px 20px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            background-color: #61dafb;
+            color: #282c34;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .upgrade button:disabled {
+            background-color: #999;
+            cursor: not-allowed;
+        }
+        .upgrade button:hover:not(:disabled) {
+            background-color: #21a1f1;
+        }
+        #pps {
+            font-size: 1.5em;
+            margin-top: 20px;
+        }
+        /* PPS Ticker Styles */
+        #ticker-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .ticker {
+            position: absolute;
+            font-size: 1.2em;
+            color: #FFD700;
+            opacity: 1;
+            animation: ticker-animation 1s forwards;
+        }
+        @keyframes ticker-animation {
+            0% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Autoclicker Game</h1>
+    <div id="points">Points: 0</div>
+    <button id="click-button">Click Me!</button>
+    <div id="pps">Points per Second (PPS): 0</div>
+    <div class="upgrades">
+        <div class="upgrade" id="upgrade1">
+            <h3>Auto-Clicker 1</h3>
+            <p>Cost: 50 Points</p>
+            <p>Produces: 1 PPS</p>
+            <button onclick="buyUpgrade(1)">Buy</button>
+        </div>
+        <div class="upgrade" id="upgrade2">
+            <h3>Auto-Clicker 2</h3>
+            <p>Cost: 200 Points</p>
+            <p>Produces: 5 PPS</p>
+            <button onclick="buyUpgrade(2)">Buy</button>
+        </div>
+        <div class="upgrade" id="upgrade3">
+            <h3>Auto-Clicker 3</h3>
+            <p>Cost: 1000 Points</p>
+            <p>Produces: 20 PPS</p>
+            <button onclick="buyUpgrade(3)">Buy</button>
+        </div>
+        <div class="upgrade" id="upgrade4">
+            <h3>Auto-Clicker 4</h3>
+            <p>Cost: 5000 Points</p>
+            <p>Produces: 100 PPS</p>
+            <button onclick="buyUpgrade(4)">Buy</button>
+        </div>
+    </div>
+    <!-- PPS Ticker Container -->
+    <div id="ticker-container"></div>
+
+    <script>
+        // ======= Helper Functions for Cookie Management =======
+
+        /**
+         * Sets a cookie with the given name, value, and expiration days.
+         * @param {string} cname - Name of the cookie.
+         * @param {string} cvalue - Value of the cookie.
+         * @param {number} exdays - Expiration time in days.
+         */
+        function setCookie(cname, cvalue, exdays) {
+            const d = new Date();
+            d.setTime(d.getTime() + (exdays*24*60*60*1000));
+            const expires = "expires="+ d.toUTCString();
+            document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+        }
+
+        /**
+         * Retrieves the value of a cookie by name.
+         * @param {string} cname - Name of the cookie.
+         * @returns {string} - Value of the cookie.
+         */
+        function getCookie(cname) {
+            const name = cname + "=";
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const ca = decodedCookie.split(';');
+            for(let i = 0; i <ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') {
+                    c = c.substring(1);
+                }
+                if (c.indexOf(name) === 0) {
+                    return c.substring(name.length, c.length);
+                }
+            }
+            return "";
+        }
+
+        /**
+         * Deletes a cookie by name.
+         * @param {string} cname - Name of the cookie.
+         */
+        function eraseCookie(cname) {   
+            document.cookie = cname+'=; Max-Age=-99999999;';  
+        }
+
+        // ======= Game State Variables =======
+
+        let points = 0;
+        let pps = 0;
+
+        // Upgrade data structure
+        const upgrades = {
+            1: { name: "Auto-Clicker 1", cost: 50, pps: 1, purchased: false },
+            2: { name: "Auto-Clicker 2", cost: 200, pps: 5, purchased: false },
+            3: { name: "Auto-Clicker 3", cost: 1000, pps: 20, purchased: false },
+            4: { name: "Auto-Clicker 4", cost: 5000, pps: 100, purchased: false }
+        };
+
+        // DOM elements
+        const pointsDisplay = document.getElementById('points');
+        const ppsDisplay = document.getElementById('pps');
+        const clickButton = document.getElementById('click-button');
+        const tickerContainer = document.getElementById('ticker-container');
+
+        // ======= Display Update Function =======
+
+        /**
+         * Updates the points and PPS displays.
+         * Also updates the state of upgrade buttons based on points and purchase status.
+         */
+        function updateDisplay() {
+            pointsDisplay.textContent = `Points: ${points}`;
+            ppsDisplay.textContent = `Points per Second (PPS): ${pps}`;
+            // Update upgrade buttons
+            for (let id in upgrades) {
+                const upgrade = upgrades[id];
+                const button = document.querySelector(`#upgrade${id} button`);
+                if (upgrade.purchased) {
+                    button.textContent = "Purchased";
+                    button.disabled = true;
+                } else if (points >= upgrade.cost) {
+                    button.disabled = false;
+                } else {
+                    button.disabled = true;
+                }
+            }
+            // Save the current state to cookies
+            saveGameState();
+        }
+
+        // ======= Game Initialization and State Loading =======
+
+        /**
+         * Initializes the game by loading the state from cookies or starting fresh.
+         */
+        function initGame() {
+            loadGameState();
+            updateDisplay();
+        }
+
+        /**
+         * Saves the current game state (points and upgrades) to cookies.
+         */
+        function saveGameState() {
+            const gameState = {
+                points: points,
+                upgrades: {}
+            };
+            for (let id in upgrades) {
+                gameState.upgrades[id] = upgrades[id].purchased;
+            }
+            // Save as JSON string
+            setCookie("autoclickerGameState", JSON.stringify(gameState), 365);
+        }
+
+        /**
+         * Loads the game state from cookies if available.
+         * If not, starts with default values.
+         */
+        function loadGameState() {
+            const savedState = getCookie("autoclickerGameState");
+            if (savedState) {
+                try {
+                    const gameState = JSON.parse(savedState);
+                    points = gameState.points || 0;
+                    for (let id in upgrades) {
+                        if (gameState.upgrades && gameState.upgrades[id]) {
+                            upgrades[id].purchased = gameState.upgrades[id];
+                            if (upgrades[id].purchased) {
+                                pps += upgrades[id].pps;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing game state from cookie:", e);
+                    // If there's an error, reset the game state
+                    points = 0;
+                    pps = 0;
+                    for (let id in upgrades) {
+                        upgrades[id].purchased = false;
+                    }
+                    saveGameState();
+                }
+            } else {
+                // No saved state, initialize default values
+                points = 0;
+                pps = 0;
+            }
+        }
+
+        // ======= Manual Clicking Handler =======
+
+        /**
+         * Handles the manual clicking action.
+         * Increments points by 1 per click.
+         */
+        clickButton.addEventListener('click', () => {
+            points += 1;
+            updateDisplay();
+        });
+
+        // ======= Upgrade Purchasing Function =======
+
+        /**
+         * Handles purchasing an upgrade.
+         * @param {number} id - The ID of the upgrade to purchase.
+         */
+        function buyUpgrade(id) {
+            const upgrade = upgrades[id];
+            if (points >= upgrade.cost && !upgrade.purchased) {
+                points -= upgrade.cost;
+                pps += upgrade.pps;
+                upgrade.purchased = true;
+                updateDisplay();
+            }
+        }
+
+        // ======= PPS Ticker Functionality =======
+
+        /**
+         * Creates a ticker animation displaying the points added by auto-clickers.
+         * @param {number} amount - The number of points added.
+         */
+        function createTicker(amount) {
+            if (amount <= 0) return;
+
+            const ticker = document.createElement('div');
+            ticker.classList.add('ticker');
+            ticker.textContent = `+${amount} Points`;
+            ticker.style.left = `${Math.random() * 100}%`; // Random horizontal position
+            tickerContainer.appendChild(ticker);
+
+            // Remove the ticker after animation completes (1s)
+            ticker.addEventListener('animationend', () => {
+                ticker.remove();
+            });
+        }
+
+        // ======= Auto-Increment Mechanism =======
+
+        /**
+         * Automatically increments points based on PPS every second.
+         * Also creates a ticker animation for the added points.
+         */
+        setInterval(() => {
+            if (pps > 0) {
+                points += pps;
+                createTicker(pps);
+                updateDisplay();
+            }
+        }, 1000);
+
+        // ======= Initialize the Game on Page Load =======
+
+        window.onload = initGame;
+    </script>
+</body>
+</html>

@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fast Chess AI Self-Play with Scoreboard and Restart Button</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f0d9b5;
+            margin: 0;
+        }
+        #chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 60px);
+            grid-template-rows: repeat(8, 60px);
+            border: 2px solid #333;
+        }
+        .cell {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 36px;
+            user-select: none;
+            position: relative;
+        }
+        .white {
+            background-color: #f0d9b5;
+        }
+        .black {
+            background-color: #b58863;
+        }
+        .highlight {
+            outline: 3px solid yellow;
+        }
+        #status, #scoreboard {
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+        }
+        #scoreboard {
+            display: flex;
+            gap: 20px;
+        }
+        #restartButton {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #restartButton:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div id="chessboard"></div>
+    <div id="status">Initializing...</div>
+    <div id="scoreboard">
+        <div>White Wins: <span id="whiteScore">0</span></div>
+        <div>Black Wins: <span id="blackScore">0</span></div>
+    </div>
+    <button id="restartButton">Restart Game</button>
+
+    <script>
+        // Unicode Characters for Chess Pieces
+        const pieces = {
+            white: {
+                king: '♔',
+                rook: '♖',
+                bishop: '♗',
+                knight: '♘',
+                pawn: '♙'
+            },
+            black: {
+                king: '♚',
+                rook: '♜',
+                bishop: '♝',
+                knight: '♞',
+                pawn: '♟'
+            }
+        };
+
+        // Initial Board Setup
+        const initialBoard = [
+            [pieces.black.rook, pieces.black.knight, pieces.black.bishop, null, pieces.black.king, pieces.black.bishop, pieces.black.knight, pieces.black.rook],
+            [pieces.black.pawn, pieces.black.pawn, pieces.black.pawn, pieces.black.pawn, pieces.black.pawn, pieces.black.pawn, pieces.black.pawn, pieces.black.pawn],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [null, null, null, null, null, null, null, null],
+            [pieces.white.pawn, pieces.white.pawn, pieces.white.pawn, pieces.white.pawn, pieces.white.pawn, pieces.white.pawn, pieces.white.pawn, pieces.white.pawn],
+            [pieces.white.rook, pieces.white.knight, pieces.white.bishop, null, pieces.white.king, pieces.white.bishop, pieces.white.knight, pieces.white.rook]
+        ];
+
+        let board = JSON.parse(JSON.stringify(initialBoard)); // Deep copy of initial board
+        let currentPlayer = 'white';
+        let gameOver = false;
+        const boardElement = document.getElementById('chessboard');
+        const statusElement = document.getElementById('status');
+        const whiteScoreElement = document.getElementById('whiteScore');
+        const blackScoreElement = document.getElementById('blackScore');
+        const restartButton = document.getElementById('restartButton');
+
+        // Score Counters
+        let whiteScore = 0;
+        let blackScore = 0;
+
+        // Timeout IDs for Managing Moves
+        let predictedMoveTimeout = null;
+        let aiMoveTimeout = null;
+        let resetTimeout = null;
+
+        // Function to Render the Chessboard
+        function renderBoard() {
+            boardElement.innerHTML = '';
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.classList.add((row + col) % 2 === 0 ? 'white' : 'black');
+                    cell.textContent = board[row][col] || '';
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
+
+        // Utility Functions to Determine Piece Color
+        function isWhite(piece) {
+            return Object.values(pieces.white).includes(piece);
+        }
+
+        function isBlack(piece) {
+            return Object.values(pieces.black).includes(piece);
+        }
+
+        // Function to Get All Possible Moves for the Current Player
+        function getAllPossibleMoves(player) {
+            const moves = [];
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = board[row][col];
+                    if (piece && ((player === 'white' && isWhite(piece)) || (player === 'black' && isBlack(piece)))) {
+                        const pieceMoves = getPieceMoves(row, col, piece);
+                        pieceMoves.forEach(move => {
+                            moves.push({ from: [row, col], to: move });
+                        });
+                    }
+                }
+            }
+            return moves;
+        }
+
+        // Function to Get Possible Moves for a Specific Piece
+        function getPieceMoves(row, col, piece) {
+            const moves = [];
+            const directions = {
+                // Directions are in [rowOffset, colOffset]
+                [pieces.white.pawn]: [[-1, 0], [-1, -1], [-1, 1]],
+                [pieces.black.pawn]: [[1, 0], [1, -1], [1, 1]],
+                [pieces.white.rook]: [[-1, 0], [1, 0], [0, -1], [0, 1]],
+                [pieces.black.rook]: [[-1, 0], [1, 0], [0, -1], [0, 1]],
+                [pieces.white.knight]: [
+                    [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                    [1, -2], [1, 2], [2, -1], [2, 1]
+                ],
+                [pieces.black.knight]: [
+                    [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                    [1, -2], [1, 2], [2, -1], [2, 1]
+                ],
+                [pieces.white.bishop]: [[-1, -1], [-1, 1], [1, -1], [1, 1]],
+                [pieces.black.bishop]: [[-1, -1], [-1, 1], [1, -1], [1, 1]],
+                [pieces.white.king]: [
+                    [-1, 0], [1, 0], [0, -1], [0, 1],
+                    [-1, -1], [-1, 1], [1, -1], [1, 1]
+                ],
+                [pieces.black.king]: [
+                    [-1, 0], [1, 0], [0, -1], [0, 1],
+                    [-1, -1], [-1, 1], [1, -1], [1, 1]
+                ]
+            };
+
+            const isSliding = [
+                pieces.white.rook, pieces.black.rook,
+                pieces.white.bishop, pieces.black.bishop,
+                // Queen is removed since pawns don't promote to queens
+                // No queens on the board
+            ].includes(piece);
+
+            const dirs = directions[piece] || [];
+
+            dirs.forEach(dir => {
+                let r = row + dir[0];
+                let c = col + dir[1];
+                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    const target = board[r][c];
+                    if (target === null) {
+                        moves.push([r, c]);
+                    } else {
+                        if ((isWhite(piece) && isBlack(target)) || (isBlack(piece) && isWhite(target))) {
+                            moves.push([r, c]);
+                        }
+                        break; // Cannot jump over pieces
+                    }
+                    if (!isSliding) break; // Non-sliding pieces move only one square
+                    r += dir[0];
+                    c += dir[1];
+                }
+            });
+
+            // Pawn-specific logic for double moves and captures
+            if (piece === pieces.white.pawn || piece === pieces.black.pawn) {
+                const dir = piece === pieces.white.pawn ? -1 : 1;
+                const startRow = piece === pieces.white.pawn ? 6 : 1;
+
+                // Single forward move
+                let forwardRow = row + dir;
+                if (forwardRow >= 0 && forwardRow < 8 && board[forwardRow][col] === null) {
+                    moves.push([forwardRow, col]);
+
+                    // Double forward move from starting position
+                    if (row === startRow) {
+                        let doubleForwardRow = forwardRow + dir;
+                        if (doubleForwardRow >= 0 && doubleForwardRow < 8 && board[doubleForwardRow][col] === null) {
+                            moves.push([doubleForwardRow, col]);
+                        }
+                    }
+                }
+
+                // Captures
+                [[dir, -1], [dir, 1]].forEach(offset => {
+                    let captureRow = row + offset[0];
+                    let captureCol = col + offset[1];
+                    if (captureRow >= 0 && captureRow < 8 && captureCol >= 0 && captureCol < 8) {
+                        const target = board[captureRow][captureCol];
+                        if (target && ((isWhite(piece) && isBlack(target)) || (isBlack(piece) && isWhite(target)))) {
+                            moves.push([captureRow, captureCol]);
+                        }
+                    }
+                });
+
+                // No en passant or promotions
+            }
+
+            return moves;
+        }
+
+        // Function to Execute a Move
+        function makeMove(move) {
+            const [fromRow, fromCol] = move.from;
+            const [toRow, toCol] = move.to;
+            const piece = board[fromRow][fromCol];
+            const target = board[toRow][toCol];
+
+            // Move the piece
+            board[toRow][toCol] = piece;
+            board[fromRow][fromCol] = null;
+
+            // Removed pawn promotion logic
+
+            // Optionally, update status without promotion message
+            // For example, you can comment out or remove promotion-related status updates
+        }
+
+        // Function to Check for Win Condition (King Capture)
+        function checkWinCondition() {
+            let whiteKingExists = false;
+            let blackKingExists = false;
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = board[row][col];
+                    if (piece === pieces.white.king) {
+                        whiteKingExists = true;
+                    }
+                    if (piece === pieces.black.king) {
+                        blackKingExists = true;
+                    }
+                }
+            }
+
+            if (!whiteKingExists && !blackKingExists) {
+                statusElement.textContent = `Both kings have been captured! It's a draw!`;
+                gameOver = true;
+                return 'draw';
+            } else if (!whiteKingExists) {
+                statusElement.textContent = `Black wins! White's king has been captured.`;
+                blackScore++;
+                blackScoreElement.textContent = blackScore;
+                gameOver = true;
+                return 'black';
+            } else if (!blackKingExists) {
+                statusElement.textContent = `White wins! Black's king has been captured.`;
+                whiteScore++;
+                whiteScoreElement.textContent = whiteScore;
+                gameOver = true;
+                return 'white';
+            }
+
+            return null; // No win condition met
+        }
+
+        // Function to Reset the Board for a New Game
+        function resetBoard() {
+            // Clear all existing timeouts to prevent overlapping games
+            if (predictedMoveTimeout) {
+                clearTimeout(predictedMoveTimeout);
+                predictedMoveTimeout = null;
+            }
+            if (aiMoveTimeout) {
+                clearTimeout(aiMoveTimeout);
+                aiMoveTimeout = null;
+            }
+            if (resetTimeout) {
+                clearTimeout(resetTimeout);
+                resetTimeout = null;
+            }
+
+            board = JSON.parse(JSON.stringify(initialBoard)); // Reset to initial board
+            currentPlayer = 'white';
+            gameOver = false;
+            renderBoard();
+            statusElement.textContent = `White is making the first move...`;
+            aiMoveTimeout = setTimeout(aiMove, 0); // Start next game immediately after reset
+        }
+
+        // Function to Highlight Cells Involved in the Predicted Move
+        function highlightMove(move) {
+            const [fromRow, fromCol] = move.from;
+            const [toRow, toCol] = move.to;
+            const fromCell = document.querySelector(`.cell[data-row='${fromRow}'][data-col='${fromCol}']`);
+            const toCell = document.querySelector(`.cell[data-row='${toRow}'][data-col='${toCol}']`);
+            if (fromCell) fromCell.classList.add('highlight');
+            if (toCell) toCell.classList.add('highlight');
+            return { fromCell, toCell };
+        }
+
+        // Function to Remove Highlight from Cells
+        function removeHighlight(highlightedCells) {
+            const { fromCell, toCell } = highlightedCells;
+            if (fromCell) fromCell.classList.remove('highlight');
+            if (toCell) toCell.classList.remove('highlight');
+        }
+
+        // Evaluation Function for Minimax
+        function evaluateBoard(boardState) {
+            const pieceValues = {
+                [pieces.white.pawn]: 1,
+                [pieces.white.knight]: 3,
+                [pieces.white.bishop]: 3,
+                [pieces.white.rook]: 5,
+                [pieces.white.king]: 1000,
+                [pieces.black.pawn]: -1,
+                [pieces.black.knight]: -3,
+                [pieces.black.bishop]: -3,
+                [pieces.black.rook]: -5,
+                [pieces.black.king]: -1000
+            };
+            let score = 0;
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = boardState[row][col];
+                    if (piece !== null) {
+                        score += pieceValues[piece] || 0;
+                    }
+                }
+            }
+            return score;
+        }
+
+        // Minimax Algorithm
+        function minimax(boardState, depth, isMaximizingPlayer) {
+            const winner = checkWinConditionForMinimax(boardState);
+            if (winner === 'black') return 1000;
+            if (winner === 'white') return -1000;
+            if (depth === 0) return evaluateBoard(boardState);
+
+            if (isMaximizingPlayer) {
+                let maxEval = -Infinity;
+                const moves = getAllPossibleMovesFromBoard(boardState, 'black');
+                for (let move of moves) {
+                    const newBoard = makeMoveOnBoard(boardState, move);
+                    const eval = minimax(newBoard, depth - 1, false);
+                    maxEval = Math.max(maxEval, eval);
+                }
+                return maxEval;
+            } else {
+                let minEval = Infinity;
+                const moves = getAllPossibleMovesFromBoard(boardState, 'white');
+                for (let move of moves) {
+                    const newBoard = makeMoveOnBoard(boardState, move);
+                    const eval = minimax(newBoard, depth - 1, true);
+                    minEval = Math.min(minEval, eval);
+                }
+                return minEval;
+            }
+        }
+
+        // Helper Function to Check Win Condition for Minimax
+        function checkWinConditionForMinimax(boardState) {
+            let whiteKingExists = false;
+            let blackKingExists = false;
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = boardState[row][col];
+                    if (piece === pieces.white.king) {
+                        whiteKingExists = true;
+                    }
+                    if (piece === pieces.black.king) {
+                        blackKingExists = true;
+                    }
+                }
+            }
+
+            if (!whiteKingExists && !blackKingExists) {
+                return 'draw';
+            } else if (!whiteKingExists) {
+                return 'black';
+            } else if (!blackKingExists) {
+                return 'white';
+            }
+
+            return null; // No win condition met
+        }
+
+        // Helper Function to Get All Possible Moves from a Given Board State
+        function getAllPossibleMovesFromBoard(boardState, player) {
+            const tempBoard = boardState.map(row => row.slice());
+            const moves = [];
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = tempBoard[row][col];
+                    if (piece && ((player === 'white' && isWhite(piece)) || (player === 'black' && isBlack(piece)))) {
+                        const pieceMoves = getPieceMovesFromBoard(row, col, piece, tempBoard);
+                        pieceMoves.forEach(move => {
+                            moves.push({ from: [row, col], to: move });
+                        });
+                    }
+                }
+            }
+            return moves;
+        }
+
+        // Function to Get Possible Moves for a Specific Piece from a Given Board State
+        function getPieceMovesFromBoard(row, col, piece, boardState) {
+            const moves = [];
+            const directions = {
+                // Directions are in [rowOffset, colOffset]
+                [pieces.white.pawn]: [[-1, 0], [-1, -1], [-1, 1]],
+                [pieces.black.pawn]: [[1, 0], [1, -1], [1, 1]],
+                [pieces.white.rook]: [[-1, 0], [1, 0], [0, -1], [0, 1]],
+                [pieces.black.rook]: [[-1, 0], [1, 0], [0, -1], [0, 1]],
+                [pieces.white.knight]: [
+                    [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                    [1, -2], [1, 2], [2, -1], [2, 1]
+                ],
+                [pieces.black.knight]: [
+                    [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+                    [1, -2], [1, 2], [2, -1], [2, 1]
+                ],
+                [pieces.white.bishop]: [[-1, -1], [-1, 1], [1, -1], [1, 1]],
+                [pieces.black.bishop]: [[-1, -1], [-1, 1], [1, -1], [1, 1]],
+                [pieces.white.king]: [
+                    [-1, 0], [1, 0], [0, -1], [0, 1],
+                    [-1, -1], [-1, 1], [1, -1], [1, 1]
+                ],
+                [pieces.black.king]: [
+                    [-1, 0], [1, 0], [0, -1], [0, 1],
+                    [-1, -1], [-1, 1], [1, -1], [1, 1]
+                ]
+            };
+
+            const isSliding = [
+                pieces.white.rook, pieces.black.rook,
+                pieces.white.bishop, pieces.black.bishop,
+                // Queen is removed since pawns don't promote to queens
+                // No queens on the board
+            ].includes(piece);
+
+            const dirs = directions[piece] || [];
+
+            dirs.forEach(dir => {
+                let r = row + dir[0];
+                let c = col + dir[1];
+                while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                    const target = boardState[r][c];
+                    if (target === null) {
+                        moves.push([r, c]);
+                    } else {
+                        if ((isWhite(piece) && isBlack(target)) || (isBlack(piece) && isWhite(target))) {
+                            moves.push([r, c]);
+                        }
+                        break; // Cannot jump over pieces
+                    }
+                    if (!isSliding) break; // Non-sliding pieces move only one square
+                    r += dir[0];
+                    c += dir[1];
+                }
+            });
+
+            // Pawn-specific logic for double moves and captures
+            if (piece === pieces.white.pawn || piece === pieces.black.pawn) {
+                const dir = piece === pieces.white.pawn ? -1 : 1;
+                const startRow = piece === pieces.white.pawn ? 6 : 1;
+
+                // Single forward move
+                let forwardRow = row + dir;
+                if (forwardRow >= 0 && forwardRow < 8 && boardState[forwardRow][col] === null) {
+                    moves.push([forwardRow, col]);
+
+                    // Double forward move from starting position
+                    if (row === startRow) {
+                        let doubleForwardRow = forwardRow + dir;
+                        if (doubleForwardRow >= 0 && doubleForwardRow < 8 && boardState[doubleForwardRow][col] === null) {
+                            moves.push([doubleForwardRow, col]);
+                        }
+                    }
+                }
+
+                // Captures
+                [[dir, -1], [dir, 1]].forEach(offset => {
+                    let captureRow = row + offset[0];
+                    let captureCol = col + offset[1];
+                    if (captureRow >= 0 && captureRow < 8 && captureCol >= 0 && captureCol < 8) {
+                        const target = boardState[captureRow][captureCol];
+                        if (target && ((isWhite(piece) && isBlack(target)) || (isBlack(piece) && isWhite(target)))) {
+                            moves.push([captureRow, captureCol]);
+                        }
+                    }
+                });
+
+                // No en passant or promotions
+            }
+
+            return moves;
+        }
+
+        // Helper Function to Make a Move on a Given Board State (Used in Minimax)
+        function makeMoveOnBoard(boardState, move) {
+            const newBoard = boardState.map(row => row.slice());
+            const [fromRow, fromCol] = move.from;
+            const [toRow, toCol] = move.to;
+            const piece = newBoard[fromRow][fromCol];
+            newBoard[toRow][toCol] = piece;
+            newBoard[fromRow][fromCol] = null;
+            return newBoard;
+        }
+
+        // Function to Find the Best Move for Black Using Minimax
+        function findBestMove(boardState, depth) {
+            let bestMove = null;
+            let bestValue = -Infinity;
+            const moves = getAllPossibleMovesFromBoard(boardState, 'black');
+            for (let move of moves) {
+                const newBoard = makeMoveOnBoard(boardState, move);
+                const moveValue = minimax(newBoard, depth - 1, false);
+                if (moveValue > bestValue) {
+                    bestValue = moveValue;
+                    bestMove = move;
+                }
+            }
+            return bestMove;
+        }
+
+        // Function to Execute a Move
+        function makeMove(move) {
+            const [fromRow, fromCol] = move.from;
+            const [toRow, toCol] = move.to;
+            const piece = board[fromRow][fromCol];
+            const target = board[toRow][toCol];
+
+            // Move the piece
+            board[toRow][toCol] = piece;
+            board[fromRow][fromCol] = null;
+
+            // Removed pawn promotion logic
+
+            // Optionally, update status without promotion message
+            // For example, you can comment out or remove promotion-related status updates
+        }
+
+        // Function to Check for Win Condition (King Capture)
+        function checkWinCondition() {
+            let whiteKingExists = false;
+            let blackKingExists = false;
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = board[row][col];
+                    if (piece === pieces.white.king) {
+                        whiteKingExists = true;
+                    }
+                    if (piece === pieces.black.king) {
+                        blackKingExists = true;
+                    }
+                }
+            }
+
+            if (!whiteKingExists && !blackKingExists) {
+                statusElement.textContent = `Both kings have been captured! It's a draw!`;
+                gameOver = true;
+                return 'draw';
+            } else if (!whiteKingExists) {
+                statusElement.textContent = `Black wins! White's king has been captured.`;
+                blackScore++;
+                blackScoreElement.textContent = blackScore;
+                gameOver = true;
+                return 'black';
+            } else if (!blackKingExists) {
+                statusElement.textContent = `White wins! Black's king has been captured.`;
+                whiteScore++;
+                whiteScoreElement.textContent = whiteScore;
+                gameOver = true;
+                return 'white';
+            }
+
+            return null; // No win condition met
+        }
+
+        // Function to Reset the Board for a New Game
+        function resetBoard() {
+            // Clear all existing timeouts to prevent overlapping games
+            if (predictedMoveTimeout) {
+                clearTimeout(predictedMoveTimeout);
+                predictedMoveTimeout = null;
+            }
+            if (aiMoveTimeout) {
+                clearTimeout(aiMoveTimeout);
+                aiMoveTimeout = null;
+            }
+            if (resetTimeout) {
+                clearTimeout(resetTimeout);
+                resetTimeout = null;
+            }
+
+            board = JSON.parse(JSON.stringify(initialBoard)); // Reset to initial board
+            currentPlayer = 'white';
+            gameOver = false;
+            renderBoard();
+            statusElement.textContent = `White is making the first move...`;
+            aiMoveTimeout = setTimeout(aiMove, 0); // Start next game immediately after reset
+        }
+
+        // Function to Highlight Cells Involved in the Predicted Move
+        function highlightMove(move) {
+            const [fromRow, fromCol] = move.from;
+            const [toRow, toCol] = move.to;
+            const fromCell = document.querySelector(`.cell[data-row='${fromRow}'][data-col='${fromCol}']`);
+            const toCell = document.querySelector(`.cell[data-row='${toRow}'][data-col='${toCol}']`);
+            if (fromCell) fromCell.classList.add('highlight');
+            if (toCell) toCell.classList.add('highlight');
+            return { fromCell, toCell };
+        }
+
+        // Function to Remove Highlight from Cells
+        function removeHighlight(highlightedCells) {
+            const { fromCell, toCell } = highlightedCells;
+            if (fromCell) fromCell.classList.remove('highlight');
+            if (toCell) toCell.classList.remove('highlight');
+        }
+
+        // Simple AI: Selects a Random Valid Move with Prediction
+        function aiMove() {
+            if (gameOver) {
+                // Delay before starting the next game
+                resetTimeout = setTimeout(resetBoard, 500); // Reduced delay for faster repetition
+                return;
+            }
+
+            const moves = getAllPossibleMoves(currentPlayer);
+            if (moves.length === 0) {
+                const winner = currentPlayer === 'white' ? 'Black' : 'White';
+                statusElement.textContent = `${winner} wins! ${capitalize(currentPlayer)} has no valid moves.`;
+                if (winner === 'White') {
+                    whiteScore++;
+                    whiteScoreElement.textContent = whiteScore;
+                } else {
+                    blackScore++;
+                    blackScoreElement.textContent = blackScore;
+                }
+                gameOver = true;
+                resetTimeout = setTimeout(resetBoard, 500); // Reduced delay for faster repetition
+                return;
+            }
+
+            let move;
+            if (currentPlayer === 'white') {
+                // White AI: Random Move
+                move = moves[Math.floor(Math.random() * moves.length)];
+            } else {
+                // Black AI: Minimax Move
+                // Introduce a slight delay to simulate thinking
+                statusElement.textContent = `Black is thinking...`;
+                setTimeout(() => {
+                    const bestMove = findBestMove(board, 2); // Depth of 2
+                    if (bestMove) {
+                        executeAIMove(bestMove);
+                    } else {
+                        // If no best move found, fallback to random
+                        const randomMove = moves[Math.floor(Math.random() * moves.length)];
+                        executeAIMove(randomMove);
+                    }
+                }, 100); // 100ms delay for better user experience
+                return; // Exit the function as the move will be handled asynchronously
+            }
+
+            // Highlight the predicted move
+            const highlightedCells = highlightMove(move);
+
+            // Update Status with Predicted Move
+            statusElement.textContent = `AI predicts ${capitalize(currentPlayer)} will move from (${move.from[0]+1}, ${move.from[1]+1}) to (${move.to[0]+1}, ${move.to[1]+1})`;
+
+            // Wait for 50ms before executing the move to show prediction
+            predictedMoveTimeout = setTimeout(() => {
+                // Remove highlight after prediction phase
+                removeHighlight(highlightedCells);
+
+                // Execute the move
+                makeMove(move);
+                renderBoard();
+
+                // Check for win condition after the move
+                const winResult = checkWinCondition();
+                if (winResult) {
+                    resetTimeout = setTimeout(resetBoard, 500); // Reduced delay for faster repetition
+                    return;
+                }
+
+                // Update Status with Executed Move
+                statusElement.textContent = `${capitalize(currentPlayer)} moved from (${move.from[0]+1}, ${move.from[1]+1}) to (${move.to[0]+1}, ${move.to[1]+1})`;
+
+                // Switch Player
+                currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+
+                // Continue the game as fast as possible with minimal delay
+                aiMoveTimeout = setTimeout(aiMove, 0); // Execute next move immediately
+            }, 50); // Reduced delay to 50ms for faster gameplay
+        }
+
+        // Function to Execute AI Move (Used for Black AI)
+        function executeAIMove(move) {
+            // Highlight the predicted move
+            const highlightedCells = highlightMove(move);
+
+            // Update Status with Predicted Move
+            statusElement.textContent = `Black moves from (${move.from[0]+1}, ${move.from[1]+1}) to (${move.to[0]+1}, ${move.to[1]+1})`;
+
+            // Execute the move
+            makeMove(move);
+            renderBoard();
+
+            // Remove highlight after execution
+            removeHighlight(highlightedCells);
+
+            // Check for win condition after the move
+            const winResult = checkWinCondition();
+            if (winResult) {
+                resetTimeout = setTimeout(resetBoard, 500); // Reduced delay for faster repetition
+                return;
+            }
+
+            // Update Status with Executed Move
+            statusElement.textContent = `Black moved from (${move.from[0]+1}, ${move.from[1]+1}) to (${move.to[0]+1}, ${move.to[1]+1})`;
+
+            // Switch Player
+            currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+
+            // Continue the game as fast as possible with minimal delay
+            aiMoveTimeout = setTimeout(aiMove, 0); // Execute next move immediately
+        }
+
+        // Event Listener for Restart Button
+        restartButton.addEventListener('click', () => {
+            resetBoard();
+        });
+
+        // Helper Function to Capitalize Player Name
+        function capitalize(word) {
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        }
+
+        // Start the Game
+        renderBoard();
+        statusElement.textContent = `White is making the first move...`;
+        aiMoveTimeout = setTimeout(aiMove, 0); // Start the first game immediately
+
+    </script>
+</body>
+</html>
